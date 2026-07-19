@@ -328,6 +328,8 @@ sendspin --output-delay-ms 50
 
 If this client plays consistently *late* compared to other Sendspin players, the audio backend on this machine is likely buffering more than it reports. This is common on Linux desktops where audio is routed through the PipeWire or PulseAudio ALSA compatibility layer (device `default`, `pulse`, or `pipewire`): the layer hides the audio graph, sink, and device buffering from the player, so it cannot be detected or corrected automatically.
 
+On Linux, Sendspin automatically asks these compatibility layers for small buffers by setting the `PIPEWIRE_LATENCY` and `PULSE_LATENCY_MSEC` environment variables for its own process (values you have already exported take precedence). This keeps the hidden buffering small; `--output-latency-comp-ms` corrects the remainder.
+
 ```bash
 sendspin --output-latency-comp-ms 50
 ```

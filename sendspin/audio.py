@@ -10,7 +10,9 @@ from __future__ import annotations
 import collections
 import concurrent.futures
 import logging
+import os
 import queue
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -36,6 +38,30 @@ if TYPE_CHECKING:
     from aiosendspin.client import AudioFormat, PCMFormat
 
 logger = logging.getLogger(__name__)
+
+
+def _request_low_shim_latency(blocksize: int, sample_rate: int) -> None:
+    """Request small buffers from Linux sound-server ALSA compatibility shims.
+
+    The PipeWire and PulseAudio ALSA plugins size their buffers from the
+    PIPEWIRE_LATENCY / PULSE_LATENCY_MSEC environment variables, which they
+    read in-process at PCM open time. Left unset, the shims buffer tens of
+    milliseconds and hide it from snd_pcm_delay(), inflating the output
+    latency that DAC-time compensation cannot see. Values already exported
+    by the user are respected; on direct hw devices and non-Linux platforms
+    the variables are simply never read.
+    """
+    if sys.platform != "linux":
+        return
+    quantum = min(256, blocksize)
+    pw_latency = os.environ.setdefault("PIPEWIRE_LATENCY", f"{quantum}/{sample_rate}")
+    pulse_ms = max(5, round(2 * quantum * 1000 / sample_rate))
+    pulse_latency = os.environ.setdefault("PULSE_LATENCY_MSEC", str(pulse_ms))
+    logger.debug(
+        "Sound-server shim latency request: PIPEWIRE_LATENCY=%s PULSE_LATENCY_MSEC=%s",
+        pw_latency,
+        pulse_latency,
+    )
 
 
 class AudioTimeInfo(Protocol):
@@ -274,6 +300,8 @@ class AudioPlayer:
         # Reset state on format change
         self._stream_started = False
         self._first_real_chunk = True
+
+        _request_low_shim_latency(self._BLOCKSIZE, pcm_format.sample_rate)
 
         # Low latency settings for accurate playback (chunks arrive 5+ seconds early)
         self._stream = sounddevice.RawOutputStream(
