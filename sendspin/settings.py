@@ -124,6 +124,7 @@ class ClientSettings(BaseSettings):
     player_volume: int = 25
     player_muted: bool = False
     output_delay_ms: float = 0.0
+    output_latency_comp_ms: float = 0.0
     last_server_url: str | None = None
     audio_device: str | None = None
     use_mpris: bool = True
@@ -151,6 +152,7 @@ class ClientSettings(BaseSettings):
         player_volume: int | None = None,
         player_muted: bool | None = None,
         output_delay_ms: float | None = None,
+        output_latency_comp_ms: float | None = None,
         last_server_url: str | None = None,
         name: str | None = None,
         audio_device: str | None = None,
@@ -183,6 +185,7 @@ class ClientSettings(BaseSettings):
                 {
                     "player_muted": player_muted,
                     "output_delay_ms": output_delay_ms,
+                    "output_latency_comp_ms": output_latency_comp_ms,
                     "last_server_url": last_server_url,
                     "name": name,
                     "audio_device": audio_device,
@@ -232,6 +235,9 @@ class ClientSettings(BaseSettings):
                 self.output_delay_ms = min(5000.0, -self.output_delay_ms)
             elif self.output_delay_ms > 5000:
                 self.output_delay_ms = 5000.0
+            self.output_latency_comp_ms = max(
+                0.0, min(1000.0, data.get("output_latency_comp_ms", 0.0))
+            )
             self.last_server_url = data.get("last_server_url")
             self.audio_device = data.get("audio_device")
             self.use_mpris = data.get("use_mpris", True)
