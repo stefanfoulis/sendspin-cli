@@ -144,6 +144,7 @@ class AudioPlayer:
         compute_server_time: Callable[[int], int],
         now_us: Callable[[], int] | None = None,
         is_clock_synced: Callable[[], bool] | None = None,
+        output_comp_us: int = 0,
     ) -> None:
         """
         Initialize the audio player.
@@ -162,9 +163,23 @@ class AudioPlayer:
                 Used to tell a real mid-stream join (start time near now, clock
                 trustworthy) apart from the unsynced fallback in compute_play_time
                 (now + 500ms). Defaults to always-True.
+            output_comp_us: Additional output-pipeline latency to compensate, in
+                microseconds. Playback is scheduled earlier by this amount to
+                counter buffering that the audio backend does not report (e.g.
+                the PipeWire/PulseAudio ALSA compatibility layer hides the
+                graph, sink, and device latency from snd_pcm_delay()). Both
+                timeline mappings are shifted coherently so sync correction
+                holds zero on the shifted timeline. Defaults to 0.
         """
-        self._compute_client_time = compute_client_time
-        self._compute_server_time = compute_server_time
+        self._output_comp_us = max(0, output_comp_us)
+        if self._output_comp_us:
+            comp_us = self._output_comp_us
+            self._compute_client_time = lambda ts: compute_client_time(ts) - comp_us
+            self._compute_server_time = lambda lt: compute_server_time(lt) + comp_us
+            logger.info("Output latency compensation active: %.1f ms", comp_us / 1000.0)
+        else:
+            self._compute_client_time = compute_client_time
+            self._compute_server_time = compute_server_time
         self._now_us = now_us or (lambda: int(time.monotonic() * 1_000_000))
         self._is_clock_synced = is_clock_synced or (lambda: True)
         self._format: PCMFormat | None = None

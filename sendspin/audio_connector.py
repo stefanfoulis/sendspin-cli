@@ -86,11 +86,13 @@ class _AudioSyncWorker:
         use_software_volume: bool,
         volume: int,
         muted: bool,
+        output_comp_us: int = 0,
     ) -> None:
         self._audio_device = audio_device
         self._use_software_volume = use_software_volume
         self._initial_volume = volume
         self._initial_muted = muted
+        self._output_comp_us = output_comp_us
 
         self._queue: queue.Queue[_AudioWorkItem] | None = None
         self._thread: threading.Thread | None = None
@@ -195,6 +197,7 @@ class _AudioSyncWorker:
             compute_server_time,
             now_us=self._now_us,
             is_clock_synced=self._is_clock_synced,
+            output_comp_us=self._output_comp_us,
         )
         current_format: AudioFormat | None = None
         flac_decoder: FlacDecoder | None = None
@@ -350,6 +353,7 @@ class AudioStreamHandler:
         on_format_change: Callable[[str | None, int, int, int], None] | None = None,
         on_volume_change: Callable[[int, bool], None] | None = None,
         volume_controller: VolumeController | None = None,
+        output_latency_comp_ms: float = 0.0,
     ) -> None:
         """Initialize the audio stream handler.
 
@@ -361,8 +365,11 @@ class AudioStreamHandler:
             on_format_change: Callback for format changes (codec, sample_rate, bit_depth, channels).
             on_volume_change: Callback for volume changes.
             volume_controller: Optional external volume controller backend.
+            output_latency_comp_ms: Unreported output-pipeline latency to
+                compensate by playing earlier, in milliseconds.
         """
         self._audio_device = audio_device
+        self._output_latency_comp_ms = output_latency_comp_ms
         self._volume = volume
         self._muted = muted
         self._on_event = on_event
@@ -488,6 +495,7 @@ class AudioStreamHandler:
                 use_software_volume=not self.uses_external_volume_controller,
                 volume=self._volume,
                 muted=self._muted,
+                output_comp_us=round(self._output_latency_comp_ms * 1000),
             )
 
         self._audio_worker.start(

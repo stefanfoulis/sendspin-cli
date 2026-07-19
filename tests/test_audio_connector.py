@@ -18,11 +18,13 @@ class _FakeWorker:
         use_software_volume: bool,
         volume: int,
         muted: bool,
+        output_comp_us: int = 0,
     ) -> None:
         self.audio_device = audio_device
         self.use_software_volume = use_software_volume
         self.volume = volume
         self.muted = muted
+        self.output_comp_us = output_comp_us
         self.running = False
         self.cleared = False
         self.stream_closed = False

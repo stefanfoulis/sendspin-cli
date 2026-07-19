@@ -49,6 +49,7 @@ class DaemonArgs:
     settings: ClientSettings
     url: str | None = None
     static_delay_ms: float | None = None
+    output_latency_comp_ms: float | None = None
     listen_port: int = 8928
     use_mpris: bool = True
     preferred_format: SupportedAudioFormat | None = None
@@ -162,8 +163,17 @@ class SendspinDaemon:
         )
         self._static_delay_ms = max(0.0, min(5000.0, delay))
 
+        # CLI arg overrides settings for output latency compensation
+        comp = (
+            self._args.output_latency_comp_ms
+            if self._args.output_latency_comp_ms is not None
+            else self._settings.output_latency_comp_ms
+        )
+        output_latency_comp_ms = max(0.0, min(1000.0, comp))
+
         self._audio_handler = AudioStreamHandler(
             audio_device=self._args.audio_device,
+            output_latency_comp_ms=output_latency_comp_ms,
             volume=self._settings.player_volume,
             muted=self._settings.player_muted,
             on_event=self._on_stream_event,
