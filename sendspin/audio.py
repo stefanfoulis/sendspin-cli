@@ -123,8 +123,8 @@ class AudioPlayer:
     """Minimum buffer duration (200ms) to start playback and absorb network jitter."""
 
     # Audio stream configuration
-    _BLOCKSIZE: Final[int] = 2048
-    """Audio block size (~46ms at 44.1kHz)."""
+    _BLOCKSIZE: Final[int] = 512
+    """Audio block size (~11.6ms at 44.1kHz)."""
 
     # Time synchronization thresholds
     _EARLY_START_THRESHOLD_US: Final[int] = 700_000
@@ -267,12 +267,12 @@ class AudioPlayer:
             dtype=SOUNDDEVICE_DTYPE_MAP[pcm_format.bit_depth],
             blocksize=self._BLOCKSIZE,
             callback=self._audio_callback,
-            latency="high",
+            latency="low",
             device=device.device_id,
         )
         self._output_latency_us = int(self._stream.latency * self._MICROSECONDS_PER_SECOND)
         logger.info(
-            "Audio stream configured: codec=%s, sample_rate=%d, channels=%d, bit_depth=%d, blocksize=%d, latency=high, output_latency=%.1f ms, device=%s",
+            "Audio stream configured: codec=%s, sample_rate=%d, channels=%d, bit_depth=%d, blocksize=%d, latency=low, output_latency=%.1f ms, device=%s",
             audio_format.codec.value,
             pcm_format.sample_rate,
             pcm_format.channels,
