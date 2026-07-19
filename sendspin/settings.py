@@ -114,6 +114,7 @@ class ClientSettings(BaseSettings):
     player_volume: int = 25
     player_muted: bool = False
     static_delay_ms: float = 0.0
+    output_latency_comp_ms: float = 0.0
     last_server_url: str | None = None
     client_id: str | None = None
     audio_device: str | None = None
@@ -139,6 +140,7 @@ class ClientSettings(BaseSettings):
         player_volume: int | None = None,
         player_muted: bool | None = None,
         static_delay_ms: float | None = None,
+        output_latency_comp_ms: float | None = None,
         last_server_url: str | None = None,
         name: str | None = None,
         client_id: str | None = None,
@@ -172,6 +174,7 @@ class ClientSettings(BaseSettings):
                 {
                     "player_muted": player_muted,
                     "static_delay_ms": static_delay_ms,
+                    "output_latency_comp_ms": output_latency_comp_ms,
                     "last_server_url": last_server_url,
                     "name": name,
                     "client_id": client_id,
@@ -216,6 +219,9 @@ class ClientSettings(BaseSettings):
                 self.static_delay_ms = min(5000.0, -self.static_delay_ms)
             elif self.static_delay_ms > 5000:
                 self.static_delay_ms = 5000.0
+            self.output_latency_comp_ms = max(
+                0.0, min(1000.0, data.get("output_latency_comp_ms", 0.0))
+            )
             self.last_server_url = data.get("last_server_url")
             self.client_id = data.get("client_id")
             self.audio_device = data.get("audio_device")
