@@ -232,6 +232,7 @@ class AppArgs:
     url: str | None = None
     url_from_settings: bool = False
     output_delay_ms: float | None = None
+    output_latency_comp_ms: float | None = None
     use_mpris: bool = True
     preferred_format: SupportedAudioFormat | None = None
     volume_controller: VolumeController | None = None
@@ -477,8 +478,17 @@ class SendspinApp:
             )
             self._applied_delay_ms = max(0.0, min(5000.0, delay))
 
+            # CLI arg overrides settings for output latency compensation
+            comp = (
+                args.output_latency_comp_ms
+                if args.output_latency_comp_ms is not None
+                else self._settings.output_latency_comp_ms
+            )
+            output_latency_comp_ms = max(0.0, min(1000.0, comp))
+
             self._audio_handler = AudioStreamHandler(
                 audio_device=args.audio_device,
+                output_latency_comp_ms=output_latency_comp_ms,
                 volume=self._settings.player_volume,
                 muted=self._settings.player_muted,
                 on_event=self._on_stream_event,

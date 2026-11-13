@@ -113,6 +113,7 @@ Settings are stored in `~/.config/sendspin/`:
   "player_volume": 50,
   "player_muted": false,
   "output_delay_ms": 0,
+  "output_latency_comp_ms": 0,
   "last_server_url": "ws://192.168.1.100:8927/sendspin",
   "name": "Living Room",
   "audio_device": "2",
@@ -147,6 +148,7 @@ Settings are stored in `~/.config/sendspin/`:
 | `player_volume` | integer (0-100) | TUI/daemon | Player output volume percentage |
 | `player_muted` | boolean | TUI/daemon | Whether the player is muted |
 | `output_delay_ms` | float | TUI/daemon | Extra playback delay in milliseconds (`--output-delay-ms`). Older settings files that use `static_delay_ms` are migrated automatically |
+| `output_latency_comp_ms` | float | TUI/daemon | Unreported output-pipeline latency to compensate by playing earlier, in milliseconds (0-1000) |
 | `last_server_url` | string | TUI/daemon | Server URL (used as default for `--url`) |
 | `name` | string | All | Friendly name for client or server (`--name`) |
 | `audio_device` | string | TUI/daemon | Audio device index, name prefix, or ALSA device name (`--audio-device`) |
@@ -321,6 +323,18 @@ sendspin --output-delay-ms 50
 `--static-delay-ms` still works as a deprecated alias for `--output-delay-ms`.
 
 > **Note:** A delay of 0ms works well in most cases. If audio is playing slightly too late, a small positive delay (e.g., 50ms) can help compensate for audio hardware latency. On compatible servers, delay can be configured remotely per player, so you shouldn't need to set this locally.
+
+#### Compensating Hidden Output Latency
+
+If this client plays consistently *late* compared to other Sendspin players, the audio backend on this machine is likely buffering more than it reports. This is common on Linux desktops where audio is routed through the PipeWire or PulseAudio ALSA compatibility layer (device `default`, `pulse`, or `pipewire`): the layer hides the audio graph, sink, and device buffering from the player, so it cannot be detected or corrected automatically.
+
+On Linux, Sendspin automatically asks these compatibility layers for small buffers by setting the `PIPEWIRE_LATENCY` and `PULSE_LATENCY_MSEC` environment variables for its own process (values you have already exported take precedence). This keeps the hidden buffering small; `--output-latency-comp-ms` corrects the remainder.
+
+```bash
+sendspin --output-latency-comp-ms 50
+```
+
+This schedules playback *earlier* by the given amount (0-1000ms) — the opposite direction of `--output-delay-ms`, which delays playback. To calibrate, play the same audio on this client and a known-good player (e.g. a hardware Sendspin device) and increase the value until they are in sync.
 
 ### Daemon Mode
 

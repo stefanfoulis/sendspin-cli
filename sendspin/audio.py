@@ -10,7 +10,9 @@ from __future__ import annotations
 import collections
 import concurrent.futures
 import logging
+import os
 import queue
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -36,6 +38,30 @@ if TYPE_CHECKING:
     from aiosendspin.client import AudioFormat, PCMFormat
 
 logger = logging.getLogger(__name__)
+
+
+def _request_low_shim_latency(blocksize: int, sample_rate: int) -> None:
+    """Request small buffers from Linux sound-server ALSA compatibility shims.
+
+    The PipeWire and PulseAudio ALSA plugins size their buffers from the
+    PIPEWIRE_LATENCY / PULSE_LATENCY_MSEC environment variables, which they
+    read in-process at PCM open time. Left unset, the shims buffer tens of
+    milliseconds and hide it from snd_pcm_delay(), inflating the output
+    latency that DAC-time compensation cannot see. Values already exported
+    by the user are respected; on direct hw devices and non-Linux platforms
+    the variables are simply never read.
+    """
+    if sys.platform != "linux":
+        return
+    quantum = min(256, blocksize)
+    pw_latency = os.environ.setdefault("PIPEWIRE_LATENCY", f"{quantum}/{sample_rate}")
+    pulse_ms = max(5, round(2 * quantum * 1000 / sample_rate))
+    pulse_latency = os.environ.setdefault("PULSE_LATENCY_MSEC", str(pulse_ms))
+    logger.debug(
+        "Sound-server shim latency request: PIPEWIRE_LATENCY=%s PULSE_LATENCY_MSEC=%s",
+        pw_latency,
+        pulse_latency,
+    )
 
 
 class AudioTimeInfo(Protocol):
@@ -123,8 +149,8 @@ class AudioPlayer:
     """Minimum buffer duration (200ms) to start playback and absorb network jitter."""
 
     # Audio stream configuration
-    _BLOCKSIZE: Final[int] = 2048
-    """Audio block size (~46ms at 44.1kHz)."""
+    _BLOCKSIZE: Final[int] = 512
+    """Audio block size (~11.6ms at 44.1kHz)."""
 
     # Time synchronization thresholds
     _EARLY_START_THRESHOLD_US: Final[int] = 700_000
@@ -144,6 +170,7 @@ class AudioPlayer:
         compute_server_time: Callable[[int], int],
         now_us: Callable[[], int] | None = None,
         is_clock_synced: Callable[[], bool] | None = None,
+        output_comp_us: int = 0,
     ) -> None:
         """
         Initialize the audio player.
@@ -162,9 +189,23 @@ class AudioPlayer:
                 Used to tell a real mid-stream join (start time near now, clock
                 trustworthy) apart from the unsynced fallback in compute_play_time
                 (now + 500ms). Defaults to always-True.
+            output_comp_us: Additional output-pipeline latency to compensate, in
+                microseconds. Playback is scheduled earlier by this amount to
+                counter buffering that the audio backend does not report (e.g.
+                the PipeWire/PulseAudio ALSA compatibility layer hides the
+                graph, sink, and device latency from snd_pcm_delay()). Both
+                timeline mappings are shifted coherently so sync correction
+                holds zero on the shifted timeline. Defaults to 0.
         """
-        self._compute_client_time = compute_client_time
-        self._compute_server_time = compute_server_time
+        self._output_comp_us = max(0, output_comp_us)
+        if self._output_comp_us:
+            comp_us = self._output_comp_us
+            self._compute_client_time = lambda ts: compute_client_time(ts) - comp_us
+            self._compute_server_time = lambda lt: compute_server_time(lt) + comp_us
+            logger.info("Output latency compensation active: %.1f ms", comp_us / 1000.0)
+        else:
+            self._compute_client_time = compute_client_time
+            self._compute_server_time = compute_server_time
         self._now_us = now_us or (lambda: int(time.monotonic() * 1_000_000))
         self._is_clock_synced = is_clock_synced or (lambda: True)
         self._format: PCMFormat | None = None
@@ -260,6 +301,8 @@ class AudioPlayer:
         self._stream_started = False
         self._first_real_chunk = True
 
+        _request_low_shim_latency(self._BLOCKSIZE, pcm_format.sample_rate)
+
         # Low latency settings for accurate playback (chunks arrive 5+ seconds early)
         self._stream = sounddevice.RawOutputStream(
             samplerate=pcm_format.sample_rate,
@@ -267,12 +310,12 @@ class AudioPlayer:
             dtype=SOUNDDEVICE_DTYPE_MAP[pcm_format.bit_depth],
             blocksize=self._BLOCKSIZE,
             callback=self._audio_callback,
-            latency="high",
+            latency="low",
             device=device.device_id,
         )
         self._output_latency_us = int(self._stream.latency * self._MICROSECONDS_PER_SECOND)
         logger.info(
-            "Audio stream configured: codec=%s, sample_rate=%d, channels=%d, bit_depth=%d, blocksize=%d, latency=high, output_latency=%.1f ms, device=%s",
+            "Audio stream configured: codec=%s, sample_rate=%d, channels=%d, bit_depth=%d, blocksize=%d, latency=low, output_latency=%.1f ms, device=%s",
             audio_format.codec.value,
             pcm_format.sample_rate,
             pcm_format.channels,
